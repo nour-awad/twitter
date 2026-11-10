@@ -1,0 +1,59 @@
+# Dapr building blocks (Week 9). Enable with `--set dapr.enabled=true`: services then publish
+# via the sidecar (EVENT_BUS=dapr) and Dapr pushes subscribed events to /dapr/events/<topic>.
+# Swapping Kafka for RabbitMQ / Azure Service Bus / GCP Pub/Sub = editing ONLY this file.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+    - { name: brokers, value: "kafka.kafka.svc:9092" }
+    - { name: authType, value: "none" }
+    - { name: consumeRetryEnabled, value: "true" }
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: statestore           # e.g. for caches / idempotency keys
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    - { name: redisHost, value: "redis-master.data.svc:6379" }
+---
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: twitter-dapr-config
+spec:
+  tracing:
+    samplingRate: "1"
+    otel: { endpointAddress: "otel-collector.observability.svc:4317", isSecure: false, protocol: grpc }
+  mtls: { enabled: true }
+---
+# Declarative resiliency policies applied by the sidecar.
+apiVersion: dapr.io/v1alpha1
+kind: Resiliency
+metadata:
+  name: twitter-resiliency
+spec:
+  policies:
+    timeouts:
+      general: 5s
+    retries:
+      events:
+        policy: exponential
+        maxInterval: 15s
+        maxRetries: 10
+    circuitBreakers:
+      pubsubCB:
+        maxRequests: 1
+        timeout: 30s
+        trip: consecutiveFailures >= 5
+  targets:
+    components:
+      pubsub:
+        inbound: { retry: events, circuitBreaker: pubsubCB }
+        outbound: { retry: events, timeout: general }

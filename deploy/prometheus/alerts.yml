@@ -1,0 +1,41 @@
+# SLO-based alerting on the RED metrics every service exports.
+groups:
+  - name: twitter-slo
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[2m]))
+            / sum by (service) (rate(http_requests_total[2m])) > 0.05
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.service }} error rate above 5%"
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))) > 0.8
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: "{{ $labels.service }} p95 latency above 800ms"
+
+      - alert: CircuitBreakerOpen
+        expr: max by (service, breaker) (circuit_breaker_state) == 2
+        for: 1m
+        labels: { severity: warn }
+        annotations:
+          summary: "{{ $labels.service }} -> {{ $labels.breaker }} circuit is OPEN"
+
+      - alert: OutboxBacklog
+        expr: max by (service) (outbox_pending_messages) > 100
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: "{{ $labels.service }} cannot publish events (outbox backlog)"
+
+      - alert: GatewayDegraded
+        expr: max(adaptation_mode{service="api-gateway"}) >= 1
+        for: 1m
+        labels: { severity: info }
+        annotations:
+          summary: "API gateway self-adapted to degraded/critical mode"

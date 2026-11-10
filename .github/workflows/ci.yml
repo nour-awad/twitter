@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check libs services functions scripts tests
+      - name: Unit + end-to-end tests (whole system in-process)
+        run: python -m pytest -q
+      - name: Contracts are up to date
+        run: python scripts/export_contracts.py && git diff --exit-code contracts/
+
+  grpc-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: true
+          breaking: ${{ github.event_name == 'pull_request' }}
+          breaking_against: "${{ github.event.repository.clone_url }}#branch=main"
+          push: false
+
+  images:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    strategy:
+      matrix:
+        include:
+          - { name: api-gateway, dir: services/api-gateway, module: "api_gateway.main:app" }
+          - { name: auth-service, dir: services/auth-service, module: "auth_service.main:app" }
+          - { name: user-service, dir: services/user-service, module: "user_service.main:app" }
+          - { name: tweet-service, dir: services/tweet-service, module: "tweet_service.main:app" }
+          - { name: timeline-service, dir: services/timeline-service, module: "timeline_service.main:app" }
+          - { name: engagement-service, dir: services/engagement-service, module: "engagement_service.main:app" }
+          - { name: notification-service, dir: services/notification-service, module: "notification_service.main:app" }
+          - { name: search-service, dir: services/search-service, module: "search_service.main:app" }
+          - { name: saga-orchestrator, dir: services/saga-orchestrator, module: "saga_orchestrator.main:app" }
+          - { name: aiops-service, dir: services/aiops-service, module: "aiops_service.main:app" }
+          - { name: ai-agent-service, dir: services/ai-agent-service, module: "ai_agent_service.main:app" }
+          - { name: content-filter, dir: functions/content-filter, module: "handler:app" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          build-args: |
+            SERVICE_DIR=${{ matrix.dir }}
+            APP_MODULE=${{ matrix.module }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/${{ github.repository }}/${{ matrix.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

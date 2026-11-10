@@ -1,0 +1,42 @@
+{{- /* Week 13: elastic scaling.
+     HPA scales request-driven services on CPU; KEDA scales event consumers on Kafka
+     consumer-group lag -- the signal that actually matters for them. */ -}}
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+{{- if and $svc.kafkaLagScaler $root.Values.keda.enabled }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $name }}
+spec:
+  scaleTargetRef: { name: {{ $name }} }
+  minReplicaCount: {{ $svc.replicas | default 1 }}
+  maxReplicaCount: {{ $svc.kafkaLagScaler.max }}
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ $root.Values.global.kafkaBootstrap }}
+        consumerGroup: {{ $name }}
+        topic: {{ $svc.kafkaLagScaler.topic }}
+        lagThreshold: {{ $svc.kafkaLagScaler.lagThreshold | quote }}
+    - type: cpu
+      metricType: Utilization
+      metadata: { value: "70" }
+{{- else if $svc.hpa }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ $name }} }
+  minReplicas: {{ $svc.hpa.min }}
+  maxReplicas: {{ $svc.hpa.max }}
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: {{ $svc.hpa.cpu }} } }
+  behavior:
+    scaleDown: { stabilizationWindowSeconds: 300 }   # avoid flapping (hysteresis)
+{{- end }}
+{{- end }}

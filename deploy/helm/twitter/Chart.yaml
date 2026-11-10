@@ -1,0 +1,6 @@
+apiVersion: v2
+name: twitter
+description: Cloud-native Twitter clone - microservices on Kubernetes with Istio, KEDA and optional Dapr
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

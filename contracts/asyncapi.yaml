@@ -1,0 +1,435 @@
+asyncapi: 3.0.0
+info:
+  title: Twitter integration events
+  version: 1.0.0
+  description: CloudEvents 1.0 envelopes on Kafka; one topic per aggregate, key =
+    aggregate id.
+servers:
+  kafka:
+    host: redpanda:9092
+    protocol: kafka
+channels:
+  twitter_users:
+    address: twitter.users
+    messages:
+      user_created_v1:
+        $ref: '#/components/messages/user_created_v1'
+      user_updated_v1:
+        $ref: '#/components/messages/user_updated_v1'
+      user_deleted_v1:
+        $ref: '#/components/messages/user_deleted_v1'
+      user_followed_v1:
+        $ref: '#/components/messages/user_followed_v1'
+      user_unfollowed_v1:
+        $ref: '#/components/messages/user_unfollowed_v1'
+  twitter_tweets:
+    address: twitter.tweets
+    messages:
+      tweet_created_v1:
+        $ref: '#/components/messages/tweet_created_v1'
+      tweet_deleted_v1:
+        $ref: '#/components/messages/tweet_deleted_v1'
+  twitter_engagement:
+    address: twitter.engagement
+    messages:
+      engagement_tweet_liked_v1:
+        $ref: '#/components/messages/engagement_tweet_liked_v1'
+      engagement_tweet_unliked_v1:
+        $ref: '#/components/messages/engagement_tweet_unliked_v1'
+      engagement_tweet_retweeted_v1:
+        $ref: '#/components/messages/engagement_tweet_retweeted_v1'
+      engagement_retweet_undone_v1:
+        $ref: '#/components/messages/engagement_retweet_undone_v1'
+  twitter_moderation:
+    address: twitter.moderation
+    messages:
+      moderation_tweet_flagged_v1:
+        $ref: '#/components/messages/moderation_tweet_flagged_v1'
+  twitter_aiops:
+    address: twitter.aiops
+    messages:
+      aiops_anomaly_detected_v1:
+        $ref: '#/components/messages/aiops_anomaly_detected_v1'
+operations:
+  publish_twitter_users:
+    action: send
+    channel:
+      $ref: '#/channels/twitter_users'
+  publish_twitter_tweets:
+    action: send
+    channel:
+      $ref: '#/channels/twitter_tweets'
+  publish_twitter_engagement:
+    action: send
+    channel:
+      $ref: '#/channels/twitter_engagement'
+  publish_twitter_moderation:
+    action: send
+    channel:
+      $ref: '#/channels/twitter_moderation'
+  publish_twitter_aiops:
+    action: send
+    channel:
+      $ref: '#/channels/twitter_aiops'
+components:
+  messages:
+    user_created_v1:
+      name: user.created.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: user.created.v1
+      payload:
+        $ref: '#/components/schemas/UserCreated'
+    user_updated_v1:
+      name: user.updated.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: user.updated.v1
+      payload:
+        $ref: '#/components/schemas/UserUpdated'
+    user_deleted_v1:
+      name: user.deleted.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: user.deleted.v1
+      payload:
+        $ref: '#/components/schemas/UserDeleted'
+    user_followed_v1:
+      name: user.followed.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: user.followed.v1
+      payload:
+        $ref: '#/components/schemas/UserFollowed'
+    user_unfollowed_v1:
+      name: user.unfollowed.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: user.unfollowed.v1
+      payload:
+        $ref: '#/components/schemas/UserUnfollowed'
+    tweet_created_v1:
+      name: tweet.created.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: tweet.created.v1
+      payload:
+        $ref: '#/components/schemas/TweetCreated'
+    tweet_deleted_v1:
+      name: tweet.deleted.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: tweet.deleted.v1
+      payload:
+        $ref: '#/components/schemas/TweetDeleted'
+    engagement_tweet_liked_v1:
+      name: engagement.tweet_liked.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: engagement.tweet_liked.v1
+      payload:
+        $ref: '#/components/schemas/EngagementChanged'
+    engagement_tweet_unliked_v1:
+      name: engagement.tweet_unliked.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: engagement.tweet_unliked.v1
+      payload:
+        $ref: '#/components/schemas/EngagementChanged'
+    engagement_tweet_retweeted_v1:
+      name: engagement.tweet_retweeted.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: engagement.tweet_retweeted.v1
+      payload:
+        $ref: '#/components/schemas/EngagementChanged'
+    engagement_retweet_undone_v1:
+      name: engagement.retweet_undone.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: engagement.retweet_undone.v1
+      payload:
+        $ref: '#/components/schemas/EngagementChanged'
+    moderation_tweet_flagged_v1:
+      name: moderation.tweet_flagged.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: moderation.tweet_flagged.v1
+      payload:
+        $ref: '#/components/schemas/TweetFlagged'
+    aiops_anomaly_detected_v1:
+      name: aiops.anomaly_detected.v1
+      contentType: application/cloudevents+json
+      headers:
+        type: object
+        properties:
+          ce_type:
+            const: aiops.anomaly_detected.v1
+      payload:
+        $ref: '#/components/schemas/AnomalyDetected'
+  schemas:
+    UserCreated:
+      properties:
+        user_id:
+          title: User Id
+          type: string
+        username:
+          title: Username
+          type: string
+        display_name:
+          title: Display Name
+          type: string
+        bio:
+          default: ''
+          title: Bio
+          type: string
+      required:
+      - user_id
+      - username
+      - display_name
+      title: UserCreated
+      type: object
+    UserUpdated:
+      properties:
+        user_id:
+          title: User Id
+          type: string
+        username:
+          title: Username
+          type: string
+        display_name:
+          title: Display Name
+          type: string
+        bio:
+          default: ''
+          title: Bio
+          type: string
+      required:
+      - user_id
+      - username
+      - display_name
+      title: UserUpdated
+      type: object
+    UserDeleted:
+      properties:
+        user_id:
+          title: User Id
+          type: string
+        username:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Username
+      required:
+      - user_id
+      title: UserDeleted
+      type: object
+    UserFollowed:
+      properties:
+        follower_id:
+          title: Follower Id
+          type: string
+        followee_id:
+          title: Followee Id
+          type: string
+        follower_username:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Follower Username
+      required:
+      - follower_id
+      - followee_id
+      title: UserFollowed
+      type: object
+    UserUnfollowed:
+      properties:
+        follower_id:
+          title: Follower Id
+          type: string
+        followee_id:
+          title: Followee Id
+          type: string
+      required:
+      - follower_id
+      - followee_id
+      title: UserUnfollowed
+      type: object
+    TweetCreated:
+      properties:
+        tweet_id:
+          title: Tweet Id
+          type: string
+        author_id:
+          title: Author Id
+          type: string
+        author_username:
+          title: Author Username
+          type: string
+        text:
+          title: Text
+          type: string
+        hashtags:
+          default: []
+          items:
+            type: string
+          title: Hashtags
+          type: array
+        mentions:
+          default: []
+          items:
+            type: string
+          title: Mentions
+          type: array
+        reply_to:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Reply To
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+      required:
+      - tweet_id
+      - author_id
+      - author_username
+      - text
+      - created_at
+      title: TweetCreated
+      type: object
+    TweetDeleted:
+      properties:
+        tweet_id:
+          title: Tweet Id
+          type: string
+        author_id:
+          title: Author Id
+          type: string
+      required:
+      - tweet_id
+      - author_id
+      title: TweetDeleted
+      type: object
+    EngagementChanged:
+      properties:
+        tweet_id:
+          title: Tweet Id
+          type: string
+        user_id:
+          title: User Id
+          type: string
+        tweet_author_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Tweet Author Id
+        like_count:
+          title: Like Count
+          type: integer
+        retweet_count:
+          title: Retweet Count
+          type: integer
+      required:
+      - tweet_id
+      - user_id
+      - like_count
+      - retweet_count
+      title: EngagementChanged
+      type: object
+    TweetFlagged:
+      properties:
+        tweet_id:
+          title: Tweet Id
+          type: string
+        author_id:
+          title: Author Id
+          type: string
+        reason:
+          title: Reason
+          type: string
+        score:
+          title: Score
+          type: number
+        model:
+          title: Model
+          type: string
+      required:
+      - tweet_id
+      - author_id
+      - reason
+      - score
+      - model
+      title: TweetFlagged
+      type: object
+    AnomalyDetected:
+      properties:
+        service:
+          title: Service
+          type: string
+        metric:
+          title: Metric
+          type: string
+        value:
+          title: Value
+          type: number
+        baseline:
+          title: Baseline
+          type: number
+        zscore:
+          title: Zscore
+          type: number
+        probable_root_cause:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Probable Root Cause
+      required:
+      - service
+      - metric
+      - value
+      - baseline
+      - zscore
+      title: AnomalyDetected
+      type: object

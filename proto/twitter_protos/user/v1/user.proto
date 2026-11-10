@@ -1,0 +1,63 @@
+// Contract-first gRPC API of the user-service (Week 3: API Engineering).
+//
+// This file is the *source of truth*. Python stubs are generated from it
+// (`make proto`) and breaking changes are detected with `buf breaking`.
+// Evolution rules:
+//   * never re-use or renumber a field tag
+//   * only add optional fields; removed fields must be `reserved`
+//   * breaking changes go into a new package version (twitter.user.v2)
+syntax = "proto3";
+
+package twitter.user.v1;
+
+option go_package = "github.com/nour-awad/twitter/gen/user/v1;userv1";
+
+service UserService {
+  // Unary call: fetch a single profile (used by tweet-service to validate authors).
+  rpc GetUser(GetUserRequest) returns (User);
+
+  // Batch call: avoids N+1 chattiness when hydrating timelines / GraphQL.
+  rpc BatchGetUsers(BatchGetUsersRequest) returns (BatchGetUsersResponse);
+
+  // Server streaming: stream (possibly millions of) followers without
+  // materialising the whole list in memory.
+  rpc ListFollowers(ListFollowersRequest) returns (stream User);
+
+  rpc IsFollowing(IsFollowingRequest) returns (IsFollowingResponse);
+}
+
+message User {
+  string id = 1;
+  string username = 2;
+  string display_name = 3;
+  string bio = 4;
+  int64 created_at_unix = 5;
+  int32 followers_count = 6;
+  int32 following_count = 7;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message BatchGetUsersRequest {
+  repeated string user_ids = 1;
+}
+
+message BatchGetUsersResponse {
+  map<string, User> users = 1;
+}
+
+message ListFollowersRequest {
+  string user_id = 1;
+  int32 limit = 2; // 0 = no limit
+}
+
+message IsFollowingRequest {
+  string follower_id = 1;
+  string followee_id = 2;
+}
+
+message IsFollowingResponse {
+  bool following = 1;
+}

@@ -1,0 +1,109 @@
+{{- /* Week 8 (service mesh) + Week 12 (zero trust) + Week 10 (resilience at infrastructure level). */ -}}
+{{- if .Values.istio.enabled }}
+{{- $root := . }}
+---
+# Every pod-to-pod connection must be mutually authenticated & encrypted.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+spec:
+  mtls: { mode: STRICT }
+---
+# Default deny: nothing may talk to anything unless explicitly allowed below.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+spec: {}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ $name }}-callers
+spec:
+  selector: { matchLabels: { app: {{ $name }} } }
+  action: ALLOW
+  rules:
+    {{- if has "*" $svc.callers }}
+    - from: [{ source: { namespaces: [{{ $root.Release.Namespace }}, istio-system] } }]
+    {{- else }}
+    - from:
+        - source:
+            principals:
+              {{- range $svc.callers }}
+              {{- if eq . "istio-ingressgateway" }}
+              - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+              {{- else }}
+              - cluster.local/ns/{{ $root.Release.Namespace }}/sa/{{ . }}
+              {{- end }}
+              {{- end }}
+    {{- end }}
+    # Prometheus scraping & kubelet probes
+    - to: [{ operation: { paths: [/metrics, /health/*] } }]
+---
+# Mesh-level resilience: connection-pool limits (bulkhead) + outlier detection (circuit breaker).
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $name }}
+spec:
+  host: {{ $name }}
+  trafficPolicy:
+    tls: { mode: ISTIO_MUTUAL }
+    connectionPool:
+      tcp: { maxConnections: 200 }
+      http: { http1MaxPendingRequests: 100, maxRequestsPerConnection: 0 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  {{- if and (eq $name "tweet-service") $root.Values.istio.canary.enabled }}
+  subsets:
+    - { name: stable, labels: { version: {{ $root.Values.istio.canary.stableVersion }} } }
+    - { name: canary, labels: { version: {{ $root.Values.istio.canary.canaryVersion }} } }
+  {{- end }}
+---
+# Timeouts + retries in the sidecar (app retries are off: RESILIENCE_MODE=mesh).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ $name }}
+spec:
+  hosts: [{{ $name }}]
+  http:
+    - timeout: 10s
+      retries: { attempts: 3, perTryTimeout: 3s, retryOn: "connect-failure,refused-stream,unavailable,503" }
+      route:
+        {{- if and (eq $name "tweet-service") $root.Values.istio.canary.enabled }}
+        - { destination: { host: {{ $name }}, subset: stable }, weight: {{ sub 100 (int $root.Values.istio.canary.canaryWeight) }} }
+        - { destination: { host: {{ $name }}, subset: canary }, weight: {{ $root.Values.istio.canary.canaryWeight }} }
+        {{- else }}
+        - destination: { host: {{ $name }} }
+        {{- end }}
+{{- end }}
+---
+# North-south traffic enters only through the ingress gateway -> api-gateway.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: twitter-ingress
+spec:
+  selector: { istio: ingressgateway }
+  servers:
+    - port: { number: 443, name: https, protocol: HTTPS }
+      tls: { mode: SIMPLE, credentialName: twitter-tls }
+      hosts: [{{ .Values.istio.host }}]
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: twitter-public
+spec:
+  hosts: [{{ .Values.istio.host }}]
+  gateways: [twitter-ingress]
+  http:
+    - route: [{ destination: { host: api-gateway, port: { number: 8000 } } }]
+{{- end }}

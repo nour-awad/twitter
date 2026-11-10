@@ -1,0 +1,102 @@
+# helm install twitter deploy/helm/twitter -n twitter --create-namespace
+image:
+  registry: ghcr.io/nour-awad/twitter   # images are built from deploy/docker/Dockerfile
+  tag: latest
+  pullPolicy: IfNotPresent
+
+global:
+  # kafka | dapr  (dapr => events go through the Dapr sidecar, see deploy/dapr)
+  eventBus: kafka
+  kafkaBootstrap: kafka.kafka.svc:9092
+  otlpEndpoint: http://otel-collector.observability.svc:4318
+  # With Istio the sidecar retries; app-level retries are switched off to avoid retry storms.
+  resilienceMode: mesh
+  postgresHost: postgres.data.svc
+  secretName: twitter-secrets          # DB passwords, client secrets, ANTHROPIC_API_KEY
+
+istio:
+  enabled: true
+  host: twitter.example.com
+  canary:                              # progressive delivery for tweet-service
+    enabled: false
+    stableVersion: v1
+    canaryVersion: v2
+    canaryWeight: 10
+
+dapr:
+  enabled: false
+
+keda:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+
+# Per-service settings. `callers` feeds the Istio AuthorizationPolicy (least privilege on the network).
+services:
+  api-gateway:
+    module: api_gateway.main:app
+    replicas: 2
+    public: true
+    hpa: { min: 2, max: 10, cpu: 70 }
+    callers: [istio-ingressgateway, ai-agent-service]
+  auth-service:
+    module: auth_service.main:app
+    replicas: 2
+    database: auth
+    hpa: { min: 2, max: 6, cpu: 70 }
+    callers: ["*"]                     # every workload needs JWKS / service tokens
+  user-service:
+    module: user_service.main:app
+    replicas: 2
+    database: users
+    grpcPort: 50051
+    hpa: { min: 2, max: 8, cpu: 70 }
+    callers: [api-gateway, tweet-service, timeline-service, saga-orchestrator, ai-agent-service]
+  tweet-service:
+    module: tweet_service.main:app
+    replicas: 2
+    database: tweets
+    hpa: { min: 2, max: 10, cpu: 70 }
+    callers: [api-gateway]
+  timeline-service:
+    module: timeline_service.main:app
+    replicas: 2
+    database: timeline
+    hpa: { min: 2, max: 20, cpu: 70 }
+    kafkaLagScaler: { topic: twitter.tweets, lagThreshold: "50", max: 20 }
+    callers: [api-gateway, saga-orchestrator]
+  engagement-service:
+    module: engagement_service.main:app
+    replicas: 2
+    database: engagement
+    hpa: { min: 2, max: 10, cpu: 70 }
+    callers: [api-gateway]
+  notification-service:
+    module: notification_service.main:app
+    replicas: 2
+    database: notifications
+    kafkaLagScaler: { topic: twitter.engagement, lagThreshold: "100", max: 10 }
+    callers: [api-gateway, saga-orchestrator]
+  search-service:
+    module: search_service.main:app
+    replicas: 2
+    hpa: { min: 2, max: 10, cpu: 70 }
+    callers: [api-gateway]
+  saga-orchestrator:
+    module: saga_orchestrator.main:app
+    replicas: 1
+    database: sagas
+    callers: [api-gateway]
+  aiops-service:
+    module: aiops_service.main:app
+    replicas: 1
+    callers: [api-gateway]
+  ai-agent-service:
+    module: ai_agent_service.main:app
+    replicas: 1
+    callers: [api-gateway]
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: "1", memory: 512Mi }

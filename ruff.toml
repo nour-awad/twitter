@@ -1,0 +1,7 @@
+line-length = 120
+target-version = "py311"
+extend-exclude = ["libs/common/twitter_protos"]
+
+[lint]
+select = ["E", "F", "W", "B"]
+ignore = ["B008", "B904"]  # FastAPI Depends() defaults; explicit chaining not required

@@ -1,0 +1,114 @@
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: v1
+kind: ServiceAccount            # distinct workload identity => distinct SPIFFE id / mTLS cert
+metadata:
+  name: {{ $name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- include "twitter.labels" (dict "name" $name) | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicas | default 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }   # zero-downtime deploys
+  selector:
+    matchLabels: { app: {{ $name }} }
+  template:
+    metadata:
+      labels: {{- include "twitter.labels" (dict "name" $name) | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+        {{- if $root.Values.dapr.enabled }}
+        dapr.io/enabled: "true"
+        dapr.io/app-id: {{ $name }}
+        dapr.io/app-port: "8000"
+        dapr.io/config: twitter-dapr-config
+        {{- end }}
+    spec:
+      serviceAccountName: {{ $name }}
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001 }
+      topologySpreadConstraints:          # survive a node/zone failure
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: {{ $name }} } }
+      containers:
+        - name: app
+          image: "{{ $root.Values.image.registry }}/{{ $name }}:{{ $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8000 }
+            {{- if $svc.grpcPort }}
+            - { name: grpc, containerPort: {{ $svc.grpcPort }} }
+            {{- end }}
+          env:
+            - { name: APP_MODULE, value: {{ $svc.module | quote }} }
+            - { name: EVENT_BUS, value: {{ if $root.Values.dapr.enabled }}dapr{{ else }}{{ $root.Values.global.eventBus }}{{ end }} }
+            - { name: KAFKA_BOOTSTRAP_SERVERS, value: {{ $root.Values.global.kafkaBootstrap | quote }} }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: {{ $root.Values.global.otlpEndpoint | quote }} }
+            - { name: OTEL_SERVICE_NAME, value: {{ $name }} }
+            - { name: RESILIENCE_MODE, value: {{ $root.Values.global.resilienceMode }} }
+            - { name: CHAOS_ENABLED, value: "false" }
+            - { name: USER_GRPC_TARGET, value: "user-service:50051" }
+            - { name: SERVICE_CLIENT_SECRET, valueFrom: { secretKeyRef: { name: {{ $root.Values.global.secretName }}, key: {{ $name }}-client-secret, optional: true } } }
+            {{- range $other, $_ := $root.Values.services }}
+            - { name: {{ include "twitter.envKey" $other }}_SERVICE_URL, value: "http://{{ $other }}:8000" }
+            {{- end }}
+            {{- if $svc.database }}
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ $root.Values.global.secretName }}, key: {{ $svc.database }}-db-password } }
+            - name: {{ include "twitter.envKey" $name }}_DATABASE_URL
+              value: "postgresql+asyncpg://{{ $svc.database }}:$(DB_PASSWORD)@{{ $root.Values.global.postgresHost }}:5432/{{ $svc.database }}"
+            {{- end }}
+            {{- if eq $name "auth-service" }}
+            - { name: SERVICE_CLIENTS_JSON, valueFrom: { secretKeyRef: { name: {{ $root.Values.global.secretName }}, key: service-clients-json, optional: true } } }
+            {{- end }}
+            {{- if eq $name "ai-agent-service" }}
+            - { name: ANTHROPIC_API_KEY, valueFrom: { secretKeyRef: { name: {{ $root.Values.global.secretName }}, key: anthropic-api-key, optional: true } } }
+            {{- end }}
+          # Self-healing: liveness failure => container restart; readiness failure => no traffic.
+          startupProbe:  { httpGet: { path: /health/live, port: http }, periodSeconds: 2, failureThreshold: 30 }
+          livenessProbe: { httpGet: { path: /health/live, port: http }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /health/ready, port: http }, periodSeconds: 5, failureThreshold: 2 }
+          resources: {{- toYaml $root.Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: data, mountPath: /app/data }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: data, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: { app: {{ $name }} }
+spec:
+  selector: { app: {{ $name }} }
+  ports:
+    - { name: http, port: 8000, targetPort: http }
+    {{- if $svc.grpcPort }}
+    - { name: grpc, port: {{ $svc.grpcPort }}, targetPort: grpc, appProtocol: grpc }
+    {{- end }}
+{{- if gt (int ($svc.replicas | default 1)) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: {{ $name }} } }
+{{- end }}
+{{- end }}

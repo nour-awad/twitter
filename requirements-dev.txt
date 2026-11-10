@@ -1,0 +1,9 @@
+-e libs/common
+strawberry-graphql>=0.240
+anthropic>=2.7
+mcp>=2.3
+grpcio-tools>=1.85.1
+pyyaml>=6
+pytest>=8
+pytest-asyncio>=1.0
+ruff>=0.6
